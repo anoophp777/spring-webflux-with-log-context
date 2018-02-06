@@ -106,4 +106,9 @@ What a pity!
 <1> They square are filled. Great!
 <2> Here again! It works!
 
+=== Where to go from here
+
+Please use this repository as a discussion to make context work and reduce boiler plate!
+
+Pull requests and discussion tickets are welcome!
 
