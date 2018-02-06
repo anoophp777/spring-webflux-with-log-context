@@ -91,7 +91,7 @@ You can try it out by calling
 
 [source]
 ----
-$ curl http://localhost:8080/byPriceActuallyWorks
+$ curl http://localhost:8080/byPriceActuallyWorks?maxPrice=1
 ----
 
 The result: No context for the to doXXX methods.

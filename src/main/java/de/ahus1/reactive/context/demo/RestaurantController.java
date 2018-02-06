@@ -58,7 +58,7 @@ public class RestaurantController {
         }
     }
 
-    @GetMapping("/byPrice")
+    @GetMapping("/byPriceActuallyWorks")
     @ContinueSpan
     public Flux<Restaurant> byPrice(@RequestParam Double maxPrice,
                                     @RequestHeader(required = false, name = "X-UserId") String uid) {
