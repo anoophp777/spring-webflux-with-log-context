@@ -1,0 +1,109 @@
+= Using Log context and correlation IDs in Spring WebFlux/Reactor
+
+TLDR::
+See how to make correlation IDs and MDCs work in a reactive environment.
+This is to show different options and discuss ideas.
+
+== Overview
+
+The problem::
+
+Reactive Java executes work in separate threads asynchronously.
+Mapped Diagnostic Context and also correlation IDs like Spring Sleuth use ThreadLocal information for their context.
++
+So they don't mix well (yet).
+
+Previous work::
++
+Simon Baslé wrote a blog see show some examples: https://simonbasle.github.io/2018/02/contextual-logging-with-reactor-context-and-mdc/
+
+What you can see here::
+
+This tries to show some alternatives, and discuss how log context can be achieved
+
+== Details
+
+The RestaurantController has two methods
+
+=== First attempt: RestaurantController#byPriceHowItShouldWork()
+
+This is how I believe future code could look like.
+Unfortunately the context information doesn't proagate into the doXXX() thingies.
+
+[source,java,indent=0]
+----
+return restaurantService.byPrice(maxPrice)
+        .delayElements(Duration.ofSeconds(1))
+        .doOnNext(r ->
+                log.debug("found restaurant {} for ${}", r.getName(), r.getPricePerPerson())
+        )
+        .doOnComplete(() ->
+                log.debug("done!")
+        )
+        .doOnError(e ->
+                log.error("failure", e)
+        );
+----
+
+You can try it out by calling
+
+[source]
+----
+$ curl http://localhost:8080/byPriceHowItShouldWork?maxPrice=1
+----
+
+The result: No context for the to doXXX methods.
+What a pity!
+
+[source]
+----
+[reactor-http-nio-6] [X-B3-ParentSpanId=45b4668d8eeb2a11, X-B3-TraceId=45b4668d8eeb2a11, X-Span-Export=false, X-B3-SpanId=9e47eff324277688, apiID=unknown] - DEBUG d.a.r.context.demo.RestaurantService.byPrice - inside byPrice
+[parallel-2] [] - DEBUG d.a.r.c.demo.RestaurantController.lambda$byPriceHowItShouldWork$0 - found restaurant McDonalds for $1.0 // <1>
+[parallel-2] [] - DEBUG d.a.r.c.demo.RestaurantController.lambda$byPriceHowItShouldWork$1 - done! // <2>
+----
+<1> See the empty square brackets?
+<2> Here again!
+
+
+=== First working solution: RestaurantController#byPrice()
+
+This is how to make it work with some boilerplate: all doXXX() things are wrapped to memorize and re-initialize the context. Take a look
+
+[source,java,indent=0]
+----
+return restaurantService.byPrice(maxPrice)
+        .delayElements(Duration.ofSeconds(1))
+        .doOnNext(wrap(r ->
+                log.debug("found restaurant {} for ${}", r.getName(), r.getPricePerPerson())
+        ))
+        .doOnComplete(wrap(() ->
+                log.debug("done!")
+        ))
+        .doOnError(wrap(e ->
+                log.error("failure", e)
+        ))
+        .doFinally(wrap(t -> {
+            tracer.close(span);
+        }));
+----
+
+You can try it out by calling
+
+[source]
+----
+$ curl http://localhost:8080/byPriceActuallyWorks
+----
+
+The result: No context for the to doXXX methods.
+What a pity!
+
+[source]
+----
+[reactor-http-nio-1] [X-B3-ParentSpanId=480e1200db27d231, X-B3-TraceId=4e14e7388baf899d, X-Span-Export=false, X-B3-SpanId=bc2a97ce1a80ca66, apiID=unknown] - DEBUG d.a.r.context.demo.RestaurantService.byPrice - inside byPrice
+[parallel-5] [X-B3-ParentSpanId=4e14e7388baf899d, X-B3-TraceId=4e14e7388baf899d, X-Span-Export=false, X-B3-SpanId=480e1200db27d231, apiID=unknown] - DEBUG d.a.r.c.demo.RestaurantController.lambda$byPrice$3 - found restaurant McDonalds for $1.0  // <1>
+[parallel-5] [X-B3-ParentSpanId=4e14e7388baf899d, X-B3-TraceId=4e14e7388baf899d, X-Span-Export=false, X-B3-SpanId=480e1200db27d231, apiID=unknown] - DEBUG d.a.r.c.demo.RestaurantController.lambda$byPrice$4 - done!  // <2>
+----
+<1> They square are filled. Great!
+<2> Here again! It works!
+
+
